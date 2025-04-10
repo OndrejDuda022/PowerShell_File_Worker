@@ -5,6 +5,7 @@ param (
 )
 
 # DEFINE KEY FUNCTIONS
+
 function Get-ValidInput { #An absolute banger of a function, I love it like my own child
     param (
         [string]$prompt,
@@ -53,6 +54,19 @@ function Invoke-EnsureFolderAndMoveFile {
         New-Item -ItemType Directory -Path $targetFolder | Out-Null
     }
     Move-Item -Path $filePath -Destination $targetFolder
+}
+
+function Invoke-PromptAndMoveToOther {
+    param (
+        [string]$filePath,
+        [string]$folderPath
+    )
+
+    $otherFolder = Join-Path -Path $folderPath -ChildPath "Other"
+    if (-not (Test-Path -Path $otherFolder)) {
+        New-Item -ItemType Directory -Path $otherFolder | Out-Null
+    }
+    Move-Item -Path $filePath -Destination $otherFolder
 }
 
 # DEFINE OPERATING FUNCTIONS
@@ -132,12 +146,10 @@ function Invoke-OrganizeFiles {
             }
             "4" { # Organizing by name
                 Get-ChildItem -Path $folderPath -File | ForEach-Object {
-                    $firstCharacter = $_.Name.Substring(0, 1).ToUpper() # Get the first character of the file name
-                    if ($firstCharacter -match "^[A-Z0-9]$") {
-                        $targetFolder = Join-Path -Path $folderPath -ChildPath $firstCharacter
-                    } else {
-                        $targetFolder = Join-Path -Path $folderPath -ChildPath "Other"
-                    }
+                    $firstCharacter = $_.Name.Substring(0, 1) # Get the first character of the file name
+                    $sanitizedCharacter = $firstCharacter -replace '[\\/:*?"<>|]', "_" # Replace invalid characters with an underscore
+                    $targetFolder = Join-Path -Path $folderPath -ChildPath $sanitizedCharacter
+                    
                     if ($targetFolder -notin $existingFolders) {
                         Invoke-EnsureFolderAndMoveFile -targetFolder $targetFolder -filePath $_.FullName
                     }
@@ -184,9 +196,8 @@ function Invoke-OrganizeFiles {
                                     }
                                 }
                             } else {
-                                $otherFolder = Join-Path -Path $folderPath -ChildPath "Other"
-                                if ($otherFolder -notin $existingFolders) {
-                                    Invoke-EnsureFolderAndMoveFile -targetFolder $otherFolder -filePath $_.FullName
+                                if ($moveToOther -eq "Y") {
+                                    Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath
                                 }
                             }
                         }
@@ -226,9 +237,8 @@ function Invoke-OrganizeFiles {
                                     }
                                 }
                             } else {
-                                $otherFolder = Join-Path -Path $folderPath -ChildPath "Other"
-                                if ($otherFolder -notin $existingFolders) {
-                                    Invoke-EnsureFolderAndMoveFile -targetFolder $otherFolder -filePath $_.FullName
+                                if ($moveToOther -eq "Y") {
+                                    Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath
                                 }
                             }
                         }
@@ -245,6 +255,7 @@ function Invoke-OrganizeFiles {
     $mediaType = $null
     if ($grandOrgType -eq "5") {
         $mediaType = Get-ValidInput -prompt "Resolution (Images) (1), Duration (Audio/Video) (2)" -validValues @("1", "2")
+        $moveToOther = Get-ValidInput -prompt "Invalid files are possible. Move to Other? Yes (Y), No (N)" -validValues @("Y", "N")
     }
 
     # Check if there are any subfolders
@@ -270,6 +281,8 @@ function Invoke-OrganizeFiles {
             Invoke-OrganizeInFolder -folderPath $_.FullName -grandOrgType $grandOrgType -mediaType $mediaType
         }
     }
+
+    Write-Host "Files in $path have been organized."
 }
 
 function Invoke-ConvertFiles {
