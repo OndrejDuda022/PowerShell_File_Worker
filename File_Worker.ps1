@@ -59,14 +59,22 @@ function Invoke-EnsureFolderAndMoveFile {
 function Invoke-PromptAndMoveToOther {
     param (
         [string]$filePath,
-        [string]$folderPath
+        [string]$folderPath,
+        [string]$actionType
     )
 
-    $otherFolder = Join-Path -Path $folderPath -ChildPath "Other"
-    if (-not (Test-Path -Path $otherFolder)) {
-        New-Item -ItemType Directory -Path $otherFolder | Out-Null
+    if ($actionType -eq "Originals") {
+        $targetFolder = Join-Path -Path $folderPath -ChildPath "Originals"
+    } elseif ($actionType -eq "Failed") {
+        $targetFolder = Join-Path -Path $folderPath -ChildPath "Failed"
+    } else {
+        $targetFolder = Join-Path -Path $folderPath -ChildPath "Other"
     }
-    Move-Item -Path $filePath -Destination $otherFolder
+    
+    if (-not (Test-Path -Path $targetFolder)) {
+        New-Item -ItemType Directory -Path $targetFolder | Out-Null
+    }
+    Move-Item -Path $filePath -Destination $targetFolder
 }
 
 function Get-Subfolders {
@@ -278,8 +286,6 @@ function Invoke-OrganizeFiles {
         return
     }
 
-    
-
     $mediaType = $null
     if ($grandOrgType -eq "1") { # Organizing by date
         $mediaType = Get-ValidInput -prompt "Creation Date (1), Last Modified Date (2), Last Accessed Date (3)" -validValues @("1", "2", "3")
@@ -310,7 +316,13 @@ function Invoke-ConvertFiles {
         param (
             [string]$folderPath
         )
-    
+
+        # Abort if files with the same name exist, extension does not matter
+        $existingFiles = Get-ChildItem -Path $folderPath -File | Where-Object { $_.Name -eq $_.Name }
+        if ($existingFiles) {
+            Write-Host "Files with the same name already exist in $folderPath. Aborting conversion."
+        }
+
         switch ($grandConvType) {
             "1" { # Images
                 $targetExtension = switch ($mediaType) {
@@ -331,7 +343,16 @@ function Invoke-ConvertFiles {
                     if ($_.Extension -match "\.(jpg|jpeg|png|gif|webp|ico)$") {
                         $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
                         & magick $_.FullName $targetFileName
-                        Remove-Item $_.FullName -Force
+                        if (Test-Path -Path $targetFileName) {
+                            if ($EraseOriginals -eq "2") {
+                                Remove-Item $_.FullName -Force
+                            } else {
+                                Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath -actionType "Originals"
+                            }
+                        } else {
+                            Write-Host "Conversion failed for file: $($_.FullName)."
+                            Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath -actionType "Failed"
+                        }
                     } else {
                         if ($moveToOther -eq "Y") {
                             Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath
@@ -355,7 +376,16 @@ function Invoke-ConvertFiles {
                     if ($_.Extension -match "\.(mp3|wav|m4a|ogg)$") {
                         $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
                         & ffmpeg -i $_.FullName $targetFileName
-                        Remove-Item $_.FullName -Force
+                        if (Test-Path -Path $targetFileName) {
+                            if ($EraseOriginals -eq "2") {
+                                Remove-Item $_.FullName -Force
+                            } else {
+                                Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath -actionType "Originals"
+                            }
+                        } else {
+                            Write-Host "Conversion failed for file: $($_.FullName)."
+                            Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath -actionType "Failed"
+                        }
                     } else {
                         if ($moveToOther -eq "Y") {
                             Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath
@@ -379,7 +409,16 @@ function Invoke-ConvertFiles {
                     if ($_.Extension -match "\.(mp4|avi|mkv|mov)$") {
                         $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
                         & ffmpeg -i $_.FullName $targetFileName
-                        Remove-Item $_.FullName -Force
+                        if (Test-Path -Path $targetFileName) {
+                            if ($EraseOriginals -eq "2") {
+                                Remove-Item $_.FullName -Force
+                            } else {
+                                Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath -actionType "Originals"
+                            }
+                        } else {
+                            Write-Host "Conversion failed for file: $($_.FullName)."
+                            Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath -actionType "Failed"
+                        }
                     } else {
                         if ($moveToOther -eq "Y") {
                             Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath
@@ -411,7 +450,16 @@ function Invoke-ConvertFiles {
                     if ($docType -eq "1") {
                         if ($_.Extension -match "\.(pdf|docx|doc|odt|txt|html)$") {
                             & soffice --headless --convert-to $targetExtension $_.FullName --outdir ([System.IO.Path]::GetDirectoryName($_.FullName))
-                            Remove-Item $_.FullName -Force
+                            if (Test-Path -Path $targetFileName) {
+                                if ($EraseOriginals -eq "2") {
+                                    Remove-Item $_.FullName -Force
+                                } else {
+                                    Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath -actionType "Originals"
+                                }
+                            } else {
+                                Write-Host "Conversion failed for file: $($_.FullName)."
+                                Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath -actionType "Failed"
+                            }
                         } else {
                             if ($moveToOther -eq "Y") {
                                 Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath
@@ -420,7 +468,16 @@ function Invoke-ConvertFiles {
                     } else {
                         if ($_.Extension -match "\.(xlsx|ods|csv)$") {
                             & soffice --headless --convert-to $targetExtension $_.FullName --outdir ([System.IO.Path]::GetDirectoryName($_.FullName))
-                            Remove-Item $_.FullName -Force
+                            if (Test-Path -Path $targetFileName) {
+                                if ($EraseOriginals -eq "2") {
+                                    Remove-Item $_.FullName -Force
+                                } else {
+                                    Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath -actionType "Originals"
+                                }
+                            } else {
+                                Write-Host "Conversion failed for file: $($_.FullName)."
+                                Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath -actionType "Failed"
+                            }
                         } else {
                             if ($moveToOther -eq "Y") {
                                 Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath
@@ -477,6 +534,8 @@ function Invoke-ConvertFiles {
     }
     $MoveToOther = Get-ValidInput -prompt "Invalid files are possible. Move to Other? Yes (Y), No (N)" -validValues @("Y", "N")
 
+    $EraseOriginals = Get-ValidInput -prompt "Move or erase original files? Move to Originals folder (1), Erase (2) - caution advised" -validValues @("1", "2")
+
     $originalSubfolders = Get-Subfolders -path $path
 
     # Process the main folder
@@ -487,6 +546,7 @@ function Invoke-ConvertFiles {
     }
 
     Write-Host "Files in $path have been converted."
+    
 }
 
 # MAIN SCRIPT
