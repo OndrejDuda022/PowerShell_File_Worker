@@ -69,6 +69,39 @@ function Invoke-PromptAndMoveToOther {
     Move-Item -Path $filePath -Destination $otherFolder
 }
 
+function Get-Subfolders {
+    param (
+        [string]$path
+    )
+
+    $subfolders = Get-ChildItem -Path $path -Directory -ErrorAction SilentlyContinue
+    $processSubfolders = $false
+
+    if ($subfolders) {
+        $includeSubfolders = Get-ValidInput -prompt "Include subfolders? Yes (Y), No (N)" -validValues @("Y", "N")
+        $processSubfolders = $includeSubfolders -eq "Y"
+    }
+
+    if ($processSubfolders) {
+        return Get-ChildItem -Path $path -Directory -Recurse
+    } else {
+        return @()
+    }
+}
+
+function Invoke-CheckToolPresence {
+    param (
+        [string]$toolName,
+        [string]$toolLabel
+    )
+
+    if (-not (Get-Command $toolName -ErrorAction SilentlyContinue)) {
+        Write-Host "$toolLabel is required for this operation. Please install it, ensure it's in PATH and try again."
+        return $false
+    }
+    return $true
+}
+
 # DEFINE OPERATING FUNCTIONS
 
 function Show-DirectoryContents {
@@ -101,8 +134,7 @@ function Invoke-OrganizeFiles {
 
         switch ($grandOrgType) {
             "1" { # Organizing by date
-                $orgType = Get-ValidInput -prompt "Creation Date (1), Last Modified Date (2), Last Accessed Date (3)" -validValues @("1", "2", "3")
-                $property = switch ($orgType) {
+                $property = switch ($mediaType) {
                     "1" { "CreationTime" }
                     "2" { "LastWriteTime" }
                     "3" { "LastAccessTime" }
@@ -146,8 +178,8 @@ function Invoke-OrganizeFiles {
             }
             "4" { # Organizing by name
                 Get-ChildItem -Path $folderPath -File | ForEach-Object {
-                    $firstCharacter = $_.Name.Substring(0, 1) # Get the first character of the file name
-                    $sanitizedCharacter = $firstCharacter -replace '[\\/:*?"<>|]', "_" # Replace invalid characters with an underscore
+                    $firstCharacter = $_.Name.Substring(0, 1)
+                    $sanitizedCharacter = $firstCharacter -replace '[\\/:*?"<>|]', "_"
                     $targetFolder = Join-Path -Path $folderPath -ChildPath $sanitizedCharacter
                     
                     if ($targetFolder -notin $existingFolders) {
@@ -159,20 +191,17 @@ function Invoke-OrganizeFiles {
                 switch ($mediaType) {
                     "1" { # Organizing by resolution (Images)
                         # Check if ImageMagick is installed
-                        if (-not (Get-Command "magick" -ErrorAction SilentlyContinue)) {
-                            Write-Host "ImageMagick is required for this operation. Please install it and try again."
+                        if (-not (Invoke-CheckToolPresence -toolName "magick" -toolLabel "ImageMagick")) {
                             return
                         }
 
                         Get-ChildItem -Path $folderPath -File | ForEach-Object {
                             if ($_.Extension -match "\.(jpg|jpeg|png|gif)$") {
-                                # Use ImageMagick to get image resolution
                                 $imageInfo = & magick identify -format "%wx%h" $_.FullName
                                 if ($imageInfo -match "(\d+)x(\d+)") {
                                     $width = [int]$matches[1]
                                     $height = [int]$matches[2]
 
-                                    # Determine resolution category
                                     $resolutionFolder = if ($width -le 640 -and $height -le 480) {
                                         "LowRes (640x480-)"
                                     } elseif ($width -le 1280 -and $height -le 720) {
@@ -189,7 +218,6 @@ function Invoke-OrganizeFiles {
                                         "HigherRes (8K+)"
                                     }
 
-                                    # Move file to the appropriate folder
                                     $targetFolder = Join-Path -Path $folderPath -ChildPath $resolutionFolder
                                     if ($targetFolder -notin $existingFolders) {
                                         Invoke-EnsureFolderAndMoveFile -targetFolder $targetFolder -filePath $_.FullName
@@ -204,14 +232,12 @@ function Invoke-OrganizeFiles {
                     }
                     "2" { # Organizing by duration (Audio/Video)
                         # Check if ffmpeg is installed
-                        if (-not (Get-Command "ffmpeg" -ErrorAction SilentlyContinue)) {
-                            Write-Host "FFmpeg is required for this operation. Please install it and try again."
+                        if (-not (Invoke-CheckToolPresence -toolName "ffmpeg" -toolLabel "FFmpeg")) {
                             return
                         }
 
                         Get-ChildItem -Path $folderPath -File | ForEach-Object {
                             if ($_.Extension -match "\.(mp3|mp4|wav|avi)$") {
-                                # Use ffmpeg to get duration
                                 $durationInfo = & ffmpeg -i $_.FullName 2>&1 | Select-String "Duration"
                                 if ($durationInfo -match "Duration: (\d+):(\d+):(\d+)") {
                                     $hours = [int]$matches[1]
@@ -219,7 +245,6 @@ function Invoke-OrganizeFiles {
                                     $seconds = [int]$matches[3]
                                     $totalSeconds = ($hours * 3600) + ($minutes * 60) + $seconds
 
-                                    # Determine duration category
                                     $durationFolder = if ($totalSeconds -le 300) {
                                         "Short (0-5 min)"
                                     } elseif ($totalSeconds -le 1800) {
@@ -230,7 +255,6 @@ function Invoke-OrganizeFiles {
                                         "Very Long (60+ min)"
                                     }
 
-                                    # Move file to the appropriate folder
                                     $targetFolder = Join-Path -Path $folderPath -ChildPath $durationFolder
                                     if ($targetFolder -notin $existingFolders) {
                                         Invoke-EnsureFolderAndMoveFile -targetFolder $targetFolder -filePath $_.FullName
@@ -248,38 +272,29 @@ function Invoke-OrganizeFiles {
         }
     }
 
-    # Ask for organization type
-    $grandOrgType = Get-ValidInput -prompt "By Date (1), By Type (2), By Size (3), By Name (4), Multimedia advanced (5)" -validValues @("1", "2", "3", "4", "5")
+    $grandOrgType = Get-ValidInput -prompt "By Date (1), By Type (2), By Size (3), By Name (4), Multimedia advanced (5), Abort (6)" -validValues @("1", "2", "3", "4", "5", "6")
 
-    # If Multimedia advanced is selected, ask for media type
+    if ($grandOrgType -eq "6") {
+        return
+    }
+
+    
+
     $mediaType = $null
-    if ($grandOrgType -eq "5") {
+    if ($grandOrgType -eq "1") { # Organizing by date
+        $mediaType = Get-ValidInput -prompt "Creation Date (1), Last Modified Date (2), Last Accessed Date (3)" -validValues @("1", "2", "3")
+    } elseif ($grandOrgType -eq "5") { # Multimedia advanced
         $mediaType = Get-ValidInput -prompt "Resolution (Images) (1), Duration (Audio/Video) (2)" -validValues @("1", "2")
         $moveToOther = Get-ValidInput -prompt "Invalid files are possible. Move to Other? Yes (Y), No (N)" -validValues @("Y", "N")
     }
 
-    # Check if there are any subfolders
-    $subfolders = Get-ChildItem -Path $path -Directory -ErrorAction SilentlyContinue
-    $processSubfolders = $false
-    if ($subfolders) {
-        # Ask for recursion option only if subfolders exist
-        $includeSubfolders = Get-ValidInput -prompt "Include subfolders? Yes (Y), No (N)" -validValues @("Y", "N")
-        $processSubfolders = $includeSubfolders -eq "Y"
-    }
-
-    # Get original subfolders if recursion is enabled
-    if ($processSubfolders) {
-        $originalSubfolders = Get-ChildItem -Path $path -Directory -Recurse
-    }
+    $originalSubfolders = Get-Subfolders -path $path
 
     # Process the main folder
     Invoke-OrganizeInFolder -folderPath $path -grandOrgType $grandOrgType -mediaType $mediaType
 
-    # Process subfolders if recursion is enabled
-    if ($processSubfolders) {
-        $originalSubfolders | ForEach-Object {
-            Invoke-OrganizeInFolder -folderPath $_.FullName -grandOrgType $grandOrgType -mediaType $mediaType
-        }
+    $originalSubfolders | ForEach-Object {
+        Invoke-OrganizeInFolder -folderPath $_.FullName -grandOrgType $grandOrgType -mediaType $mediaType
     }
 
     Write-Host "Files in $path have been organized."
@@ -289,6 +304,189 @@ function Invoke-ConvertFiles {
     param (
         [string]$path
     )
+
+    # The true hardworker here
+    function Invoke-ConvertInFolder {
+        param (
+            [string]$folderPath
+        )
+    
+        switch ($grandConvType) {
+            "1" { # Images
+                $targetExtension = switch ($mediaType) {
+                    "1" { ".jpg" }
+                    "2" { ".jpeg" }
+                    "3" { ".png" }
+                    "4" { ".gif" }
+                    "5" { ".webp" }
+                    "6" { ".ico" }
+                    "7" { ".pdf" }
+                }
+    
+                Get-ChildItem -Path $folderPath -File | ForEach-Object {
+                    if ($_.Extension -ieq $targetExtension) {
+                        return
+                    }
+    
+                    if ($_.Extension -match "\.(jpg|jpeg|png|gif|webp|ico)$") {
+                        $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
+                        & magick $_.FullName $targetFileName
+                        Remove-Item $_.FullName -Force
+                    } else {
+                        if ($moveToOther -eq "Y") {
+                            Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath
+                        }
+                    }
+                }
+            }
+            "2" { # Music
+                $targetExtension = switch ($mediaType) {
+                    "1" { ".mp3" }
+                    "2" { ".wav" }
+                    "3" { ".m4a" }
+                    "4" { ".ogg" }
+                }
+    
+                Get-ChildItem -Path $folderPath -File | ForEach-Object {
+                    if ($_.Extension -ieq $targetExtension) {
+                        return
+                    }
+    
+                    if ($_.Extension -match "\.(mp3|wav|m4a|ogg)$") {
+                        $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
+                        & ffmpeg -i $_.FullName $targetFileName
+                        Remove-Item $_.FullName -Force
+                    } else {
+                        if ($moveToOther -eq "Y") {
+                            Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath
+                        }
+                    }
+                }
+            }
+            "3" { # Videos
+                $targetExtension = switch ($mediaType) {
+                    "1" { ".mp4" }
+                    "2" { ".avi" }
+                    "3" { ".mkv" }
+                    "4" { ".mov" }
+                }
+    
+                Get-ChildItem -Path $folderPath -File | ForEach-Object {
+                    if ($_.Extension -ieq $targetExtension) {
+                        return
+                    }
+    
+                    if ($_.Extension -match "\.(mp4|avi|mkv|mov)$") {
+                        $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
+                        & ffmpeg -i $_.FullName $targetFileName
+                        Remove-Item $_.FullName -Force
+                    } else {
+                        if ($moveToOther -eq "Y") {
+                            Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath
+                        }
+                    }
+                }
+            }
+            "4" { # Documents
+                $targetExtension = switch ($docType) {
+                    "1" { switch ($mediaType) {
+                        "1" { "pdf" }
+                        "2" { "docx" }
+                        "3" { "odt" }
+                        "4" { "txt" }
+                        "5" { "html" } 
+                    } }
+                    "2" { switch ($mediaType) {
+                        "1" { "xlsx" }
+                        "2" { "ods" }
+                        "3" { "csv" }
+                    } }
+                }
+    
+                Get-ChildItem -Path $folderPath -File | ForEach-Object {
+                    if ($_.Extension -ieq $targetExtension) {
+                        return
+                    }
+                    
+                    if ($docType -eq "1") {
+                        if ($_.Extension -match "\.(pdf|docx|doc|odt|txt|html)$") {
+                            & soffice --headless --convert-to $targetExtension $_.FullName --outdir ([System.IO.Path]::GetDirectoryName($_.FullName))
+                            Remove-Item $_.FullName -Force
+                        } else {
+                            if ($moveToOther -eq "Y") {
+                                Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath
+                            }
+                        }
+                    } else {
+                        if ($_.Extension -match "\.(xlsx|ods|csv)$") {
+                            & soffice --headless --convert-to $targetExtension $_.FullName --outdir ([System.IO.Path]::GetDirectoryName($_.FullName))
+                            Remove-Item $_.FullName -Force
+                        } else {
+                            if ($moveToOther -eq "Y") {
+                                Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath
+                            }
+                        }
+                    }  
+                }
+            }
+        }
+    }
+
+    $grandConvType = Get-ValidInput -prompt "What are we converting? Images (1), Music (2), Videos (3), Documents (4), Abort (5)" -validValues @("1", "2", "3", "4", "5")
+
+    if ($grandConvType -eq "5") {
+        return
+    }
+
+    $mediaType = $null
+    switch ($grandConvType) {
+        "1" { # Images
+            # Check if ImageMagick is installed
+            if (-not (Invoke-CheckToolPresence -toolName "magick" -toolLabel "ImageMagick")) {
+                return
+            }
+            $mediaType = Get-ValidInput -prompt "Convert to JPEG (1), JPG (2), PNG (3), GIF (4), WebP (5), ICO (6), PDF (7)" -validValues @("1", "2", "3", "4", "5", "6", "7")
+        }
+        "2" { # Music
+            # Check if ffmpeg is installed
+            if (-not (Invoke-CheckToolPresence -toolName "ffmpeg" -toolLabel "FFmpeg")) {
+                return
+            }
+            $mediaType = Get-ValidInput -prompt "Convert to MP3 (1), WAV (2), M4A (3), OGG (4)" -validValues @("1", "2", "3", "4")
+        }
+        "3" { # Videos
+            # Check if ffmpeg is installed
+            if (-not (Invoke-CheckToolPresence -toolName "ffmpeg" -toolLabel "FFmpeg")) {
+                return
+            }
+            $mediaType = Get-ValidInput -prompt "Convert to MP4 (1), AVI (2), MKV (3), MOV (4)" -validValues @("1", "2", "3", "4")
+        }
+        "4" { # Text Documents
+            # Check if LibreOffice is installed
+            if (-not (Invoke-CheckToolPresence -toolName "soffice" -toolLabel "LibreOffice")) {
+                return
+            }
+            # Ask if we're working with text or table documents
+            $docType = Get-ValidInput -prompt "Type of document - Text (1), Table (2)" -validValues @("1", "2")
+            if ($docType -eq "1") {
+                $mediaType = Get-ValidInput -prompt "Convert to PDF (1), DOCX (2), ODT (3), TXT (4), HTML (5)" -validValues @("1", "2", "3", "4", "5")
+            } else {
+                $mediaType = Get-ValidInput -prompt "Convert to XLSX (1), ODS (2), CSV (3)" -validValues @("1", "2", "3")
+            }
+        }
+    }
+    $MoveToOther = Get-ValidInput -prompt "Invalid files are possible. Move to Other? Yes (Y), No (N)" -validValues @("Y", "N")
+
+    $originalSubfolders = Get-Subfolders -path $path
+
+    # Process the main folder
+    Invoke-ConvertInFolder -folderPath $path -grandConvType $grandConvType -mediaType $mediaType
+
+    $originalSubfolders | ForEach-Object {
+        Invoke-ConvertInFolder -folderPath $_.FullName -grandConvType $grandConvType -mediaType $mediaType
+    }
+
+    Write-Host "Files in $path have been converted."
 }
 
 # MAIN SCRIPT
