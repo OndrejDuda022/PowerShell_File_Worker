@@ -110,6 +110,26 @@ function Invoke-CheckToolPresence {
     return $true
 }
 
+function Get-UniqueFileName {
+    param (
+        [string]$filePath
+    )
+
+    $directory = [System.IO.Path]::GetDirectoryName($filePath)
+    $fileNameWithoutExtension = [System.IO.Path]::GetFileNameWithoutExtension($filePath)
+    $extension = [System.IO.Path]::GetExtension($filePath)
+
+    $uniqueFilePath = $filePath
+    $counter = 1
+
+    while (Test-Path -Path $uniqueFilePath) {
+        $uniqueFilePath = Join-Path -Path $directory -ChildPath "$fileNameWithoutExtension ($counter)$extension"
+        $counter++
+    }
+
+    return $uniqueFilePath
+}
+
 # DEFINE OPERATING FUNCTIONS
 
 function Show-DirectoryContents {
@@ -317,17 +337,11 @@ function Invoke-ConvertFiles {
             [string]$folderPath
         )
 
-        # Abort if files with the same name exist, extension does not matter
-        $existingFiles = Get-ChildItem -Path $folderPath -File | Where-Object { $_.Name -eq $_.Name }
-        if ($existingFiles) {
-            Write-Host "Files with the same name already exist in $folderPath. Aborting conversion."
-        }
-
         switch ($grandConvType) {
             "1" { # Images
                 $targetExtension = switch ($mediaType) {
-                    "1" { ".jpg" }
-                    "2" { ".jpeg" }
+                    "1" { ".jpeg" }
+                    "2" { ".jpg" }
                     "3" { ".png" }
                     "4" { ".gif" }
                     "5" { ".webp" }
@@ -342,6 +356,11 @@ function Invoke-ConvertFiles {
     
                     if ($_.Extension -match "\.(jpg|jpeg|png|gif|webp|ico)$") {
                         $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
+
+                        if (Test-Path -Path $targetFileName) {
+                            $targetFileName = Get-UniqueFileName -filePath $targetFileName
+                        }
+
                         & magick $_.FullName $targetFileName
                         if (Test-Path -Path $targetFileName) {
                             if ($EraseOriginals -eq "2") {
@@ -375,6 +394,11 @@ function Invoke-ConvertFiles {
     
                     if ($_.Extension -match "\.(mp3|wav|m4a|ogg)$") {
                         $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
+
+                        if (Test-Path -Path $targetFileName) {
+                            $targetFileName = Get-UniqueFileName -filePath $targetFileName
+                        }
+
                         & ffmpeg -i $_.FullName $targetFileName
                         if (Test-Path -Path $targetFileName) {
                             if ($EraseOriginals -eq "2") {
@@ -408,6 +432,11 @@ function Invoke-ConvertFiles {
     
                     if ($_.Extension -match "\.(mp4|avi|mkv|mov)$") {
                         $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
+
+                        if (Test-Path -Path $targetFileName) {
+                            $targetFileName = Get-UniqueFileName -filePath $targetFileName
+                        }
+
                         & ffmpeg -i $_.FullName $targetFileName
                         if (Test-Path -Path $targetFileName) {
                             if ($EraseOriginals -eq "2") {
@@ -449,7 +478,18 @@ function Invoke-ConvertFiles {
                     
                     if ($docType -eq "1") {
                         if ($_.Extension -match "\.(pdf|docx|doc|odt|txt|html)$") {
-                            & soffice --headless --convert-to $targetExtension $_.FullName --outdir ([System.IO.Path]::GetDirectoryName($_.FullName))
+                            $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
+
+                            if (Test-Path -Path $targetFileName) {
+                                $uniqueTargetFileName = Get-UniqueFileName -filePath $_.FullName
+                                Copy-Item -Path $_.FullName -Destination $uniqueTargetFileName
+                                & soffice --headless --convert-to $targetExtension $uniqueTargetFileName --outdir ([System.IO.Path]::GetDirectoryName($_.FullName))
+                                Remove-Item $uniqueTargetFileName -Force
+
+                            } else {
+                                & soffice --headless --convert-to $targetExtension $_.FullName --outdir ([System.IO.Path]::GetDirectoryName($_.FullName))
+                            }
+
                             if (Test-Path -Path $targetFileName) {
                                 if ($EraseOriginals -eq "2") {
                                     Remove-Item $_.FullName -Force
@@ -467,7 +507,18 @@ function Invoke-ConvertFiles {
                         }
                     } else {
                         if ($_.Extension -match "\.(xlsx|ods|csv)$") {
-                            & soffice --headless --convert-to $targetExtension $_.FullName --outdir ([System.IO.Path]::GetDirectoryName($_.FullName))
+                            $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
+
+                            if (Test-Path -Path $targetFileName) {
+                                $uniqueTargetFileName = Get-UniqueFileName -filePath $_.FullName
+                                Copy-Item -Path $_.FullName -Destination $uniqueTargetFileName
+                                & soffice --headless --convert-to $targetExtension $uniqueTargetFileName --outdir ([System.IO.Path]::GetDirectoryName($_.FullName))
+                                Remove-Item $uniqueTargetFileName -Force
+
+                            } else {
+                                & soffice --headless --convert-to $targetExtension $_.FullName --outdir ([System.IO.Path]::GetDirectoryName($_.FullName))
+                            }
+
                             if (Test-Path -Path $targetFileName) {
                                 if ($EraseOriginals -eq "2") {
                                     Remove-Item $_.FullName -Force
