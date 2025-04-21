@@ -1,7 +1,13 @@
 # DEFINE PARAMETERS
 param (
     [string]$fPath,
-    [string]$act
+    [string]$act,
+    [string]$grandOrgType,
+    [string]$mediaType,
+    [string]$moveToOther,
+    [string]$grandConvType,
+    [string]$docType,
+    [string]$eraseOriginals
 )
 
 # DEFINE KEY FUNCTIONS
@@ -112,22 +118,107 @@ function Invoke-CheckToolPresence {
 
 function Get-UniqueFileName {
     param (
-        [string]$filePath
+        [string]$filePath,
+        [string]$targetExtension,
+        [string]$jobType
     )
 
     $directory = [System.IO.Path]::GetDirectoryName($filePath)
     $fileNameWithoutExtension = [System.IO.Path]::GetFileNameWithoutExtension($filePath)
-    $extension = [System.IO.Path]::GetExtension($filePath)
+    $originalExtension = [System.IO.Path]::GetExtension($filePath)
 
-    $uniqueFilePath = $filePath
+    $uniqueFilePath = Join-Path -Path $directory -ChildPath "$fileNameWithoutExtension$targetExtension"
     $counter = 1
 
     while (Test-Path -Path $uniqueFilePath) {
-        $uniqueFilePath = Join-Path -Path $directory -ChildPath "$fileNameWithoutExtension ($counter)$extension"
+        $uniqueFilePath = Join-Path -Path $directory -ChildPath "$fileNameWithoutExtension ($counter)$targetExtension"
         $counter++
     }
 
+    if ($jobtype -eq "docs") {
+        $uniqueFilePath = Join-Path -Path $directory -ChildPath "$fileNameWithoutExtension ($($counter - 1))$originalExtension"
+    }
+    else {
+        $uniqueFilePath = Join-Path -Path $directory -ChildPath "$fileNameWithoutExtension ($($counter - 1))$targetExtension"
+    }
+    
+
     return $uniqueFilePath
+}
+
+function Invoke-ValidateParameter {
+    param (
+        [string]$toCheck,
+        [string]$grandOrgType,
+        [string]$mediaType,
+        [string]$moveToOther,
+        [string]$grandConvType,
+        [string]$docType,
+        [string]$eraseOriginals
+    )
+    switch ($toCheck) {
+        "grandOrgType" {
+            if ($grandOrgType -and $grandOrgType -notin @("1", "2", "3", "4", "5", "6")) {
+                Write-Host "Error: Invalid parameter - grandOrgType."
+                return $false
+            }
+        }
+        "mediaType" {
+            if ($mediaType -and $grandOrgType -eq "1" -and $mediaType -notin @("1", "2", "3")) {
+                Write-Host "Error: Invalid parameter - mediaType."
+                return $false
+            }
+            if ($mediaType -and $grandOrgType -eq "5" -and $mediaType -notin @("1", "2")) {
+                Write-Host "Error: Invalid parameter - mediaType."
+                return $false
+            }
+            if ($mediaType -and $grandConvType -eq "1" -and $mediaType -notin @("1", "2", "3", "4", "5", "6", "7")) {
+                Write-Host "Error: Invalid parameter - mediaType."
+                return $false
+            }
+            if ($mediaType -and $grandConvType -eq "2" -and $mediaType -notin @("1", "2", "3", "4")) {
+                Write-Host "Error: Invalid parameter - mediaType."
+                return $false
+            }
+            if ($mediaType -and $grandConvType -eq "3" -and $mediaType -notin @("1", "2", "3", "4")) {
+                Write-Host "Error: Invalid parameter - mediaType."
+                return $false
+            }
+        }
+        "grandConvType" {
+            if ($grandConvType -and $grandConvType -notin @("1", "2", "3", "4", "5")) {
+                Write-Host "Error: Invalid parameter - grandConvType."
+                return $false
+            }
+        }
+        "docType" {
+            if ($docType -and $docType -notin @("1", "2")) {
+                Write-Host "Error: Invalid parameter - docType."
+                return $false
+            }
+            if ($docType -and $grandConvType -eq "4" -and $docType -eq "1" -and $mediaType -notin @("1", "2", "3", "4", "5")) {
+                Write-Host "Error: Invalid parameter - mediaType."
+                return $false
+            }
+            if ($docType -and $grandConvType -eq "4" -and $docType -eq "2" -and $mediaType -notin @("1", "2", "3")) {
+                Write-Host "Error: Invalid parameter - mediaType."
+                return $false
+            }
+        }
+        "moveToOther" {
+            if ($moveToOther -and $moveToOther -notin @("Y", "N")) {
+                Write-Host "Error: Invalid parameter - moveToOther."
+                return $false
+            }
+        }
+        "eraseOriginals" {
+            if ($eraseOriginals -and $eraseOriginals -notin @("1", "2")) {
+                Write-Host "Error: Invalid parameter - eraseOriginals."
+                return $false
+            }
+        }
+    }
+    return $true
 }
 
 # DEFINE OPERATING FUNCTIONS
@@ -152,7 +243,10 @@ function Show-DirectoryContents {
 }
 function Invoke-OrganizeFiles {
     param (
-        [string]$path
+        [string]$path,
+        [string]$grandOrgType,
+        [string]$mediaType,
+        [string]$moveToOther
     )
     # The true hardworker here
     function Invoke-OrganizeInFolder {
@@ -300,35 +394,25 @@ function Invoke-OrganizeFiles {
         }
     }
 
-    $grandOrgType = Get-ValidInput -prompt "By Date (1), By Type (2), By Size (3), By Name (4), Multimedia advanced (5), Abort (6)" -validValues @("1", "2", "3", "4", "5", "6")
-
-    if ($grandOrgType -eq "6") {
-        return
-    }
-
-    $mediaType = $null
-    if ($grandOrgType -eq "1") { # Organizing by date
-        $mediaType = Get-ValidInput -prompt "Creation Date (1), Last Modified Date (2), Last Accessed Date (3)" -validValues @("1", "2", "3")
-    } elseif ($grandOrgType -eq "5") { # Multimedia advanced
-        $mediaType = Get-ValidInput -prompt "Resolution (Images) (1), Duration (Audio/Video) (2)" -validValues @("1", "2")
-        $moveToOther = Get-ValidInput -prompt "Invalid files are possible. Move to Other? Yes (Y), No (N)" -validValues @("Y", "N")
-    }
-
     $originalSubfolders = Get-Subfolders -path $path
 
-    # Process the main folder
     Invoke-OrganizeInFolder -folderPath $path -grandOrgType $grandOrgType -mediaType $mediaType
 
     $originalSubfolders | ForEach-Object {
         Invoke-OrganizeInFolder -folderPath $_.FullName -grandOrgType $grandOrgType -mediaType $mediaType
     }
 
-    Write-Host "Files in $path have been organized."
+    Write-Host "Organizing of files in $path is complete."
 }
 
 function Invoke-ConvertFiles {
     param (
-        [string]$path
+        [string]$path,
+        [string]$grandConvType,
+        [string]$mediaType,
+        [string]$moveToOther,
+        [string]$docType,
+        [string]$eraseOriginals
     )
 
     # The true hardworker here
@@ -339,6 +423,10 @@ function Invoke-ConvertFiles {
 
         switch ($grandConvType) {
             "1" { # Images
+                if (-not (Invoke-CheckToolPresence -toolName "magick" -toolLabel "ImageMagick")) {
+                    return
+                }
+
                 $targetExtension = switch ($mediaType) {
                     "1" { ".jpeg" }
                     "2" { ".jpg" }
@@ -358,12 +446,12 @@ function Invoke-ConvertFiles {
                         $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
 
                         if (Test-Path -Path $targetFileName) {
-                            $targetFileName = Get-UniqueFileName -filePath $targetFileName
+                            $targetFileName = Get-UniqueFileName -filePath $_.FullName -targetExtension $targetExtension -jobType "images"
                         }
 
                         & magick $_.FullName $targetFileName
                         if (Test-Path -Path $targetFileName) {
-                            if ($EraseOriginals -eq "2") {
+                            if ($eraseOriginals -eq "2") {
                                 Remove-Item $_.FullName -Force
                             } else {
                                 Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath -actionType "Originals"
@@ -380,6 +468,9 @@ function Invoke-ConvertFiles {
                 }
             }
             "2" { # Music
+                if (-not (Invoke-CheckToolPresence -toolName "ffmpeg" -toolLabel "FFmpeg")) {
+                    return
+                }
                 $targetExtension = switch ($mediaType) {
                     "1" { ".mp3" }
                     "2" { ".wav" }
@@ -396,12 +487,12 @@ function Invoke-ConvertFiles {
                         $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
 
                         if (Test-Path -Path $targetFileName) {
-                            $targetFileName = Get-UniqueFileName -filePath $targetFileName
+                            $targetFileName = Get-UniqueFileName -filePath $_.FullName -targetExtension $targetExtension -jobType "audio"
                         }
 
                         & ffmpeg -i $_.FullName $targetFileName
                         if (Test-Path -Path $targetFileName) {
-                            if ($EraseOriginals -eq "2") {
+                            if ($eraseOriginals -eq "2") {
                                 Remove-Item $_.FullName -Force
                             } else {
                                 Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath -actionType "Originals"
@@ -418,6 +509,9 @@ function Invoke-ConvertFiles {
                 }
             }
             "3" { # Videos
+                if (-not (Invoke-CheckToolPresence -toolName "ffmpeg" -toolLabel "FFmpeg")) {
+                    return
+                }
                 $targetExtension = switch ($mediaType) {
                     "1" { ".mp4" }
                     "2" { ".avi" }
@@ -434,12 +528,12 @@ function Invoke-ConvertFiles {
                         $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
 
                         if (Test-Path -Path $targetFileName) {
-                            $targetFileName = Get-UniqueFileName -filePath $targetFileName
+                            $targetFileName = Get-UniqueFileName -filePath $_.FullName -targetExtension $targetExtension -jobType "video"
                         }
 
                         & ffmpeg -i $_.FullName $targetFileName
                         if (Test-Path -Path $targetFileName) {
-                            if ($EraseOriginals -eq "2") {
+                            if ($eraseOriginals -eq "2") {
                                 Remove-Item $_.FullName -Force
                             } else {
                                 Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath -actionType "Originals"
@@ -456,6 +550,9 @@ function Invoke-ConvertFiles {
                 }
             }
             "4" { # Documents
+                if (-not (Invoke-CheckToolPresence -toolName "soffice" -toolLabel "LibreOffice")) {
+                    return
+                }
                 $targetExtension = switch ($docType) {
                     "1" { switch ($mediaType) {
                         "1" { "pdf" }
@@ -472,7 +569,8 @@ function Invoke-ConvertFiles {
                 }
     
                 Get-ChildItem -Path $folderPath -File | ForEach-Object {
-                    if ($_.Extension -ieq $targetExtension) {
+                    $dotTargetExtension = ".$targetExtension"
+                    if ($_.Extension -ieq $dotTargetExtension) {
                         return
                     }
                     
@@ -481,7 +579,7 @@ function Invoke-ConvertFiles {
                             $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
 
                             if (Test-Path -Path $targetFileName) {
-                                $uniqueTargetFileName = Get-UniqueFileName -filePath $_.FullName
+                                $uniqueTargetFileName = Get-UniqueFileName -filePath $_.FullName -targetExtension $dotTargetExtension -jobType "docs"
                                 Copy-Item -Path $_.FullName -Destination $uniqueTargetFileName
                                 & soffice --headless --convert-to $targetExtension $uniqueTargetFileName --outdir ([System.IO.Path]::GetDirectoryName($_.FullName))
                                 Remove-Item $uniqueTargetFileName -Force
@@ -491,7 +589,7 @@ function Invoke-ConvertFiles {
                             }
 
                             if (Test-Path -Path $targetFileName) {
-                                if ($EraseOriginals -eq "2") {
+                                if ($eraseOriginals -eq "2") {
                                     Remove-Item $_.FullName -Force
                                 } else {
                                     Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath -actionType "Originals"
@@ -510,7 +608,7 @@ function Invoke-ConvertFiles {
                             $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
 
                             if (Test-Path -Path $targetFileName) {
-                                $uniqueTargetFileName = Get-UniqueFileName -filePath $_.FullName
+                                $uniqueTargetFileName = Get-UniqueFileName -filePath $_.FullName -targetExtension $dotTargetExtension -jobType "docs"
                                 Copy-Item -Path $_.FullName -Destination $uniqueTargetFileName
                                 & soffice --headless --convert-to $targetExtension $uniqueTargetFileName --outdir ([System.IO.Path]::GetDirectoryName($_.FullName))
                                 Remove-Item $uniqueTargetFileName -Force
@@ -520,7 +618,7 @@ function Invoke-ConvertFiles {
                             }
 
                             if (Test-Path -Path $targetFileName) {
-                                if ($EraseOriginals -eq "2") {
+                                if ($eraseOriginals -eq "2") {
                                     Remove-Item $_.FullName -Force
                                 } else {
                                     Invoke-PromptAndMoveToOther -filePath $_.FullName -folderPath $folderPath -actionType "Originals"
@@ -540,53 +638,6 @@ function Invoke-ConvertFiles {
         }
     }
 
-    $grandConvType = Get-ValidInput -prompt "What are we converting? Images (1), Music (2), Videos (3), Documents (4), Abort (5)" -validValues @("1", "2", "3", "4", "5")
-
-    if ($grandConvType -eq "5") {
-        return
-    }
-
-    $mediaType = $null
-    switch ($grandConvType) {
-        "1" { # Images
-            # Check if ImageMagick is installed
-            if (-not (Invoke-CheckToolPresence -toolName "magick" -toolLabel "ImageMagick")) {
-                return
-            }
-            $mediaType = Get-ValidInput -prompt "Convert to JPEG (1), JPG (2), PNG (3), GIF (4), WebP (5), ICO (6), PDF (7)" -validValues @("1", "2", "3", "4", "5", "6", "7")
-        }
-        "2" { # Music
-            # Check if ffmpeg is installed
-            if (-not (Invoke-CheckToolPresence -toolName "ffmpeg" -toolLabel "FFmpeg")) {
-                return
-            }
-            $mediaType = Get-ValidInput -prompt "Convert to MP3 (1), WAV (2), M4A (3), OGG (4)" -validValues @("1", "2", "3", "4")
-        }
-        "3" { # Videos
-            # Check if ffmpeg is installed
-            if (-not (Invoke-CheckToolPresence -toolName "ffmpeg" -toolLabel "FFmpeg")) {
-                return
-            }
-            $mediaType = Get-ValidInput -prompt "Convert to MP4 (1), AVI (2), MKV (3), MOV (4)" -validValues @("1", "2", "3", "4")
-        }
-        "4" { # Text Documents
-            # Check if LibreOffice is installed
-            if (-not (Invoke-CheckToolPresence -toolName "soffice" -toolLabel "LibreOffice")) {
-                return
-            }
-            # Ask if we're working with text or table documents
-            $docType = Get-ValidInput -prompt "Type of document - Text (1), Table (2)" -validValues @("1", "2")
-            if ($docType -eq "1") {
-                $mediaType = Get-ValidInput -prompt "Convert to PDF (1), DOCX (2), ODT (3), TXT (4), HTML (5)" -validValues @("1", "2", "3", "4", "5")
-            } else {
-                $mediaType = Get-ValidInput -prompt "Convert to XLSX (1), ODS (2), CSV (3)" -validValues @("1", "2", "3")
-            }
-        }
-    }
-    $MoveToOther = Get-ValidInput -prompt "Invalid files are possible. Move to Other? Yes (Y), No (N)" -validValues @("Y", "N")
-
-    $EraseOriginals = Get-ValidInput -prompt "Move or erase original files? Move to Originals folder (1), Erase (2) - caution advised" -validValues @("1", "2")
-
     $originalSubfolders = Get-Subfolders -path $path
 
     # Process the main folder
@@ -596,7 +647,7 @@ function Invoke-ConvertFiles {
         Invoke-ConvertInFolder -folderPath $_.FullName -grandConvType $grandConvType -mediaType $mediaType
     }
 
-    Write-Host "Files in $path have been converted."
+    Write-Host "Conversion of files in $path is complete."
     
 }
 
@@ -620,15 +671,139 @@ if (-not $act -or $act -notin @("1", "2", "3", "4", "5")) {
     $act = Select-Action
 }
 
-# Perform the action
+# Perform the action - add parameters
 do {
     switch ($act) {
         "1" {
-            Invoke-OrganizeFiles -path $fPath
+            if (-not $grandOrgType) {
+                $grandOrgType = Get-ValidInput -prompt "By Date (1), By Type (2), By Size (3), By Name (4), Multimedia advanced (5), Abort (6)" -validValues @("1", "2", "3", "4", "5", "6")
+                if ($grandOrgType -eq "6") {
+                    $grandOrgType = $null
+                    $mediaType = $null
+                    $moveToOther = $null
+                    $act = Select-Action
+                    Continue
+                }
+            } else {
+                $safetyCheck = Invoke-ValidateParameter -toCheck "grandOrgType" -grandOrgType $grandOrgType
+                if (-not $safetyCheck) {
+                    $grandOrgType = $null
+                    Continue
+                }
+            }
+            if (-not $mediaType) {
+                if ($grandOrgType -eq "1") { # Organizing by date
+                    $mediaType = Get-ValidInput -prompt "Creation Date (1), Last Modified Date (2), Last Accessed Date (3)" -validValues @("1", "2", "3")
+                } elseif ($grandOrgType -eq "5") { # Multimedia advanced
+                    $mediaType = Get-ValidInput -prompt "Resolution (Images) (1), Duration (Audio/Video) (2)" -validValues @("1", "2")
+                    if (-not $moveToOther) {
+                        $moveToOther = Get-ValidInput -prompt "Invalid files are possible. Move to Other? Yes (Y), No (N)" -validValues @("Y", "N")
+                    } else {
+                        $safetyCheck = Invoke-ValidateParameter -toCheck "moveToOther" -moveToOther $moveToOther
+                        if (-not $safetyCheck) {
+                            $moveToOther = $null
+                            Continue
+                        }
+                    }
+                }
+            } else {
+                $safetyCheck = Invoke-ValidateParameter -toCheck "mediaType" -grandOrgType $grandOrgType -mediaType $mediaType
+                if (-not $safetyCheck) {
+                    $mediaType = $null
+                    Continue
+                }
+            }
+
+            Invoke-OrganizeFiles -path $fPath -grandOrgType $grandOrgType -mediaType $mediaType -moveToOther $moveToOther
+
+            $grandOrgType = $null
+            $mediaType = $null
+            $moveToOther = $null
             $act = Select-Action
         }
         "2" {
-            Invoke-ConvertFiles -path $fPath
+            if (-not $grandConvType) {
+                $grandConvType = Get-ValidInput -prompt "What are we converting? Images (1), Music (2), Videos (3), Documents (4), Abort (5)" -validValues @("1", "2", "3", "4", "5")
+                if ($grandConvType -eq "5") {
+                    $grandConvType = $null
+                    $mediaType = $null
+                    $docType = $null
+                    $moveToOther = $null
+                    $eraseOriginals = $null
+                    $act = Select-Action
+                    Continue
+                }
+            } else {
+                $safetyCheck = Invoke-ValidateParameter -toCheck "grandConvType" -grandConvType $grandConvType
+                if (-not $safetyCheck) {
+                    $grandConvType = $null
+                    Continue
+                }
+            }
+            if (-not $mediaType) {
+                switch ($grandConvType) {
+                    "1" { # Images
+                        $mediaType = Get-ValidInput -prompt "Convert to JPEG (1), JPG (2), PNG (3), GIF (4), WebP (5), ICO (6), PDF (7)" -validValues @("1", "2", "3", "4", "5", "6", "7")
+                    }
+                    "2" { # Music
+                        $mediaType = Get-ValidInput -prompt "Convert to MP3 (1), WAV (2), M4A (3), OGG (4)" -validValues @("1", "2", "3", "4")
+                    }
+                    "3" { # Videos
+                        $mediaType = Get-ValidInput -prompt "Convert to MP4 (1), AVI (2), MKV (3), MOV (4)" -validValues @("1", "2", "3", "4")
+                    }
+                    "4" { # Text Documents
+                        # Ask if we're working with text or table documents
+                        if (-not $docType) {
+                            $docType = Get-ValidInput -prompt "Type of document - Text (1), Table (2)" -validValues @("1", "2")
+                            if ($docType -eq "1") {
+                                $mediaType = Get-ValidInput -prompt "Convert to PDF (1), DOCX (2), ODT (3), TXT (4), HTML (5)" -validValues @("1", "2", "3", "4", "5")
+                            } else {
+                                $mediaType = Get-ValidInput -prompt "Convert to XLSX (1), ODS (2), CSV (3)" -validValues @("1", "2", "3")
+                            }
+                        } else {
+                            $safetyCheck = Invoke-ValidateParameter -toCheck "docType" -grandConvType $grandConvType -docType $docType
+                            if (-not $safetyCheck) {
+                                $docType = $null
+                                Continue
+                            }
+                        }
+                    }
+                }
+            } else {
+                $safetyCheck = Invoke-ValidateParameter -toCheck "mediaType" -grandConvType $grandConvType -mediaType $mediaType
+                if (-not $safetyCheck) {
+                    $mediaType = $null
+                    Continue
+                }
+            }
+
+            if (-not $moveToOther) {
+                $moveToOther = Get-ValidInput -prompt "Invalid files are possible. Move to Other? Yes (Y), No (N)" -validValues @("Y", "N")
+            } else {
+                $safetyCheck = Invoke-ValidateParameter -toCheck "moveToOther" -moveToOther $moveToOther
+                if (-not $safetyCheck) {
+                    $moveToOther = $null
+                    Continue
+                }
+            }
+
+            if (-not $eraseOriginals) {
+                $eraseOriginals = Get-ValidInput -prompt "Move or erase original files? Move to Originals folder (1), Erase (2) - caution advised" -validValues @("1", "2")
+            } else {
+                $safetyCheck = Invoke-ValidateParameter -toCheck "eraseOriginals" -eraseOriginals $eraseOriginals
+                if (-not $safetyCheck) {
+                    $eraseOriginals = $null
+                    Continue
+                }
+            }
+
+            Invoke-ConvertFiles -path $fPath -grandConvType $grandConvType -mediaType $mediaType -docType $docType -moveToOther $moveToOther -EraseOriginals $eraseOriginals
+
+            $grandConvType = $null
+            $mediaType = $null
+            $docType = $null
+            $moveToOther = $null
+            $eraseOriginals = $null
             $act = Select-Action
         }
         "3" {
