@@ -575,7 +575,7 @@ function Invoke-ConvertFiles {
                     }
                     
                     if ($docType -eq "1") {
-                        if ($_.Extension -match "\.(pdf|docx|doc|odt|txt|html)$") {
+                        if ($_.Extension -match "\.(docx|doc|odt|txt|html)$") {
                             $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
 
                             if (Test-Path -Path $targetFileName) {
