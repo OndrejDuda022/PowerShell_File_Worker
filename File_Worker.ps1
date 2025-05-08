@@ -442,7 +442,7 @@ function Invoke-ConvertFiles {
                         return
                     }
     
-                    if ($_.Extension -match "\.(jpg|jpeg|png|gif|webp|ico)$") {
+                    if ($_.Extension -match "\.(jpg|jpeg|png|webp|ico)$") {
                         $targetFileName = [System.IO.Path]::ChangeExtension($_.FullName, $targetExtension)
 
                         if (Test-Path -Path $targetFileName) {
