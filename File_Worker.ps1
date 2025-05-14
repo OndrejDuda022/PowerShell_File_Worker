@@ -1,3 +1,7 @@
+# POWERSHELL FILE WORKER
+# Version 1.0
+# A PowerShell script that allows advanced sorting and organization of files according to user specifications.
+
 # DEFINE PARAMETERS
 param (
     [string]$fPath,
